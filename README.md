@@ -3,7 +3,7 @@
 Bem-vindo ao meu laboratório pessoal de scripts.
 Aqui você encontra códigos criados enquanto eu resolvia labs da DESEC, rooms e challenges do TryHackMe — e qualquer outra tarefa repetitiva que me fez pensar: “dá pra automatizar isso”.
 
-Sobre este repositório
+**Sobre este repositório**
 
 Sim, eu sei que já existem ferramentas offline e online que fazem muitas dessas coisas.
 Provavelmente fazem melhor, mais rápido e com interface bonita.
@@ -14,7 +14,9 @@ A ideia é passar tempo codando, quebrando coisas, debugando, entendendo o probl
 
 Este repositório é exatamente isso: prática real, erros reais e aprendizado real.
 
-O que você vai encontrar aqui
+
+**O que você vai encontrar aqui**
+
 
 Scripts para automatizar tarefas repetitivas
 
@@ -26,7 +28,9 @@ Ideias simples, outras nem tanto, todas com propósito didático
 
 Nada aqui tenta ser “framework definitivo”. É laboratório, não vitrine.
 
-Como contribuir
+
+**Como contribuir**
+
 
 Quer sugerir melhorias? Abra um Pull Request
 
@@ -36,7 +40,9 @@ Commit direto na main não rola — até eu preciso me proteger de mim mesmo
 
 Contribuições são bem-vindas, desde que façam sentido e mantenham o espírito de aprendizado do repositório.
 
-Segurança e responsabilidade
+
+**Segurança e responsabilidade**
+
 
 Nenhum script contém senhas, tokens ou dados sensíveis
 
@@ -46,7 +52,8 @@ Use por sua conta e risco
 
 Se algo quebrar, provavelmente faz parte do aprendizado
 
-Licença
+
+**Licença**
 
 MIT License.
 Use, modifique, estude — só não me responsabilize se algo sair do controle.
