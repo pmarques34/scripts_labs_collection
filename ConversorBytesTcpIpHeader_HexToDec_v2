@@ -1,0 +1,262 @@
+#!/bin/bash
+#
+# Nome: ConversorBytesTcpIpHeader_HexToDec_v2.sh
+#
+# Descrição:
+#   Script educacional para tradução manual de bytes hexadecimais
+#   extraídos de capturas de tráfego (PCAP), convertendo:
+#     - Sequências de 6 bytes em endereços MAC
+#     - Sequências de 4 bytes em endereços IPv4
+#     - Indicador de flags setadas  
+#
+# Objetivo:
+#   Auxiliar no estudo de headers de protocolos de rede (Ethernet, IP, TCP),
+#   permitindo validar manualmente offsets, endianness e campos sem depender
+#   exclusivamente de ferramentas gráficas como o Wireshark.
+#
+# Contexto:
+#   Desenvolvido como parte de laboratórios de análise de tráfego e
+#   cibersegurança do Curso Novo Pentest Profissional da DESEC, com 
+#   foco em leitura de pacotes em formato hexadecimal.
+#
+# Uso:
+#   Inserir os bytes diretamente no script.
+#
+# Exemplo:
+#   Bytes IP:  c0 a8 00 0a  ->  192.168.0.10
+#   Bytes MAC: 00 0c 29 76 43 e1 -> 00:0c:29:76:43:e1
+#   Bytes TCP_FLAG: 10 -> ACK
+# Observações:
+#   - Os valores hexadecimais devem ser fornecidos no formato 0xNN
+#   - Foco didático, não produção
+#
+# Autor: Paulo Marques
+# Repositório: https://github.com/pmarques34/scripts_labs
+# Licença: MIT
+#
+
+#=============================================================================================================
+#   Lidando com o ajuste das linhas do script ao tamanho da janela
+#=============================================================================================================
+
+#Descobrindo o tamanho atual da janela
+#
+cols=$(tput cols) #verifica largura da janela e armazena em cols
+lines=$(tput lines) #verifica a quantidade de linhas na janela e armazena em lines
+#
+#Quebra automática de texto conforme a largura usando o fold. Sempre usar ao final de linhas longas
+#
+#   Para a quebra automática usar o fold >>> printf ... | fold -s -w "$(tput cols)"
+#       -s >>> quebra em espaços (não corta palavras)
+#       -W >>> largura máxima 
+#
+#Usar Separadores Dinâmicos
+#
+#   printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+#   printf '%*s\n' "$(tput cols)" '' | tr ' ' '-'
+
+
+
+#=============================================================================================================
+#   Apresentação do Script
+#=============================================================================================================
+
+clear
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "%s\n" "
+    Olá,
+
+    Este script foi criado durante a prática de análise de protocolos do curso Novo Pentest Profissional da DESEC.
+
+    Seu objetivo além de praticar a criação de scripts, é traduzir e formatar sequências de bytes em formato hexadecimal para valores legíveis:
+
+- Endereços MAC (6 bytes)
+- Endereços IPv4 (4 bytes)
+- Portas TCP/UDP
+- Sockets no formato IP:PORTA
+- Flags TCP (Control Bits)
+
+*** O script foi desenvolvido com foco educacional, auxiliando no entendimento de headers de protocolos 
+de rede, endianness, offsets e interpretação manual de campos extraídos de capturas de tráfego (PCAP).
+" | fold -s -w "$(tput cols)"
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+#=============================================================================================================
+#   Solicitação e Armazenamento dos valores em Hexadecimal
+#=============================================================================================================
+
+printf "\n  Vamos começar, copie e cole as 3 primeiras linhas do bloco de bytes (3x16 = 48 Bytes).
+Pressione Ctrl+D quando terminar: "
+
+#read -a linhas_bloco_codigo >>> Esse trecho foi retirado pq ele so aceita a linha completa, como preciso de 3 linhas, mudei a estrategia
+
+# Lê múltiplas linhas até Ctrl+D
+mapfile -t linhas_multilinhas
+
+# Converte todas as linhas em um único array de bytes
+linhas_bloco_codigo=()
+for linha in "${linhas_multilinhas[@]}"; do
+    for byte in $linha; do
+        linhas_bloco_codigo+=( "$byte" )
+    done
+done
+
+printf "\n"
+
+#=============================================================================================================
+#   Variáveis e arrays
+#=============================================================================================================
+
+
+#Armazena cada trecho do código na sua variável correta, ainda em hexadecimal
+hex_dst_mac_address=( "${linhas_bloco_codigo[@]:0:6}" )
+hex_src_mac_address=( "${linhas_bloco_codigo[@]:6:6}" )
+hex_src_ip_address=( "${linhas_bloco_codigo[@]:26:4}" )
+hex_dst_ip_address=( "${linhas_bloco_codigo[@]:30:4}" )
+hex_src_port_address=( "${linhas_bloco_codigo[@]:34:2}" )
+hex_dst_port_address=( "${linhas_bloco_codigo[@]:36:2}" )
+
+#Normaliza pra que apenas os 3 últimos bytes da tcp flag sejam armazenados, ainda em hexadecimal
+hex_tcp_flags=( "${linhas_bloco_codigo[@]:47:1}" )
+
+#Variávis para armazenar os valores convertido de hexadecimal para decimal
+dec_src_mac_address=()
+dec_dst_mac_address=()
+dec_src_ip_address=()
+dec_dst_ip_address=()
+dec_src_port_address=()
+dec_dst_port_address=()
+dec_tcp_flags=()
+
+#Variáveis criadas para exibição no resultado final
+dst_mac_address=()
+src_mac_address=()
+src_ip_address=()
+src_port=()
+dst_port=()
+bit_tcp_flag=()
+tcp_flag=()
+
+
+
+#=============================================================================================================
+#   Cálculos - Prefixar o 0x para fazer a conversão de hexadecimal para decimal
+#       O que acontece abaixo:   
+#            for byte in "${hex_src_ip_address[@]}"
+#            percorre cada byte (c0, a8, 00, 0a)
+#
+#            0x$byte
+#            monta algo como 0xc0
+#
+#            printf "%d" 0xc0
+#            converte para decimal (192)
+#
+#            dec_src_ip_address+=( ... )
+#            adiciona ao array decimal
+#=============================================================================================================
+
+
+for byte in "${hex_src_ip_address[@]}"; do
+    dec_src_ip_address+=( "$(printf "%d" 0x$byte)" )
+done
+for byte in "${hex_dst_ip_address[@]}"; do
+    dec_dst_ip_address+=( "$(printf "%d" 0x$byte)" )
+done
+for byte in "${hex_src_port_address[@]}"; do
+    dec_src_port_address+=( "$(printf "%d" 0x$byte)" )
+done
+for byte in "${hex_dst_port_address[@]}"; do
+    dec_dst_port_address+=( "$(printf "%d" 0x$byte)" )
+done
+
+dec_tcp_flags=$((16#${hex_tcp_flags[0]}))
+
+
+#=============================================================================================================
+#   Cálculos - Aplicando a fórmula para as portas e o trecho para comparação dos bits
+#       (bit mais signicativo x 256) + bit menos significativo
+#
+#       (bits do tcp flag e suas combinações mais comuns)
+#
+#           2    → SYN
+#           16   → ACK
+#           18   → SYN + ACK
+#           17   → FIN + ACK
+#           4    → RST
+#           20   → RST + ACK
+#           24   → PSH + ACK
+#           25   → PSH + FIN + ACK
+#           29   → FIN + PSH + ACK
+#       
+#=============================================================================================================
+
+src_port=$(( dec_src_port_address[0] * 256 + dec_src_port_address[1] ))
+dst_port=$(( dec_dst_port_address[0] * 256 + dec_dst_port_address[1] ))
+
+#Didaticamente: Estou lendo 2 bytes de control bits, no TCP real, flags estão em 1 byte 
+#(6 bits úteis + ECN), como o script é educacional e consciente, fiz dessa forma pra focar nas flags mais
+#importantes e facilitar o resultado final
+
+case $dec_tcp_flags in
+    2)  tcp_flag="bit2_SYN" ;;
+    16) tcp_flag="bit16_ACK" ;;
+    18) tcp_flag="bit18_SYN_ACK" ;;
+    17) tcp_flag="bit17_FIN_ACK" ;;
+    4)  tcp_flag="bit4_RST" ;;
+    20) tcp_flag="bit20_RST_ACK" ;;
+    24) tcp_flag="bit24_PSH_ACK" ;;
+    25) tcp_flag="bit25_PSH_FIN_ACK" ;;
+    29) tcp_flag="bit29_FIN_PSH_ACK" ;;
+    *)  tcp_flag="Desconhecido ($dec_tcp_flags), Segue os os valores de cada bit 1-FIN, 2-SYN, 4-RST, 8-PSH, 16-ACK, 32-URG, 64-ECE, 128-CWR\n" ;;
+esac
+
+#=============================================================================================================
+#   Normalização dos resultados
+#=============================================================================================================
+
+dst_mac_address="${hex_dst_mac_address[0]}:${hex_dst_mac_address[1]}:${hex_dst_mac_address[2]}:${hex_dst_mac_address[3]}:${hex_dst_mac_address[4]}:${hex_dst_mac_address[5]}"
+src_mac_address="${hex_src_mac_address[0]}:${hex_src_mac_address[1]}:${hex_src_mac_address[2]}:${hex_src_mac_address[3]}:${hex_src_mac_address[4]}:${hex_src_mac_address[5]}"
+src_ip_address="${dec_src_ip_address[0]}.${dec_src_ip_address[1]}.${dec_src_ip_address[2]}.${dec_src_ip_address[3]}"
+dst_ip_address="${dec_dst_ip_address[0]}.${dec_dst_ip_address[1]}.${dec_dst_ip_address[2]}.${dec_dst_ip_address[3]}"
+src_port_address=$src_port
+dst_port_address=$dst_port
+socket_src="$src_ip_address:$src_port_address"
+socket_dst="$dst_ip_address:$dst_port_address"
+
+
+#=============================================================================================================
+#   Apresentação dos resultados
+#=============================================================================================================
+
+
+clear
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "Os resultados estão abaixo, Bytes em Hexadecimal seguido (>>>) da saída formatada:"
+
+printf "\n"
+
+printf "%s\n""DST_MAC_ADDRESS == $dst_mac_address
+SRC_MAC_ADDRESS == $src_mac_address
+SRC_IP_ADDRESS == ${hex_src_ip_address[*]} >>> $src_ip_address
+DST_IP_ADDRESS == ${hex_dst_ip_address[*]} >>> $dst_ip_address
+SRC_PORT_ADDRESS == ${hex_src_port_address[*]} >>> $src_port
+DST_PORT_ADDRESS == ${hex_dst_port_address[*]} >>> $dst_port
+SOCKET_SRC == $socket_src
+SOCKET_DST == $socket_dst
+TCP_FLAGS == ${hex_tcp_flags[*]} >>> $tcp_flag
+BIT_TCP == $bit_tcp_flag >>> 1-FIN, 2-SYN, 4-RST, 8-PSH, 16-ACK, 32-URG, 64-ECE, 128-CWR"
+
+printf "\n"
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\nConversorBytesTcpIpHeader_HexToDec_v1 - Paulo Marques - v2 - 09JAN26\n\n"
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\n"
