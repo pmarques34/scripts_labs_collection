@@ -1,0 +1,516 @@
+#!/bin/bash
+#
+# Nome: ConversorBytesTcpIpHeader_HexToDec_v1
+#
+# Descrição:
+#   Script educacional para tradução manual de bytes hexadecimais
+#   extraídos de capturas de tráfego (PCAP), convertendo:
+#     - Sequências de 6 bytes em endereços MAC
+#     - Sequências de 4 bytes em endereços IPv4
+#     - Indicador de flags setadas  
+#
+# Objetivo:
+#   Auxiliar no estudo de headers de protocolos de rede (Ethernet, IP, TCP),
+#   permitindo validar manualmente offsets, endianness e campos sem depender
+#   exclusivamente de ferramentas gráficas como o Wireshark.
+#
+# Contexto:
+#   Desenvolvido como parte de laboratórios de análise de tráfego e
+#   cibersegurança do Curso Novo Pentest Profissional da DESEC, com 
+#   foco em leitura de pacotes em formato hexadecimal.
+#
+# Uso:
+#   Inserir os bytes diretamente no script.
+#
+# Exemplo:
+#   Bytes IP:  c0 a8 00 0a  ->  192.168.0.10
+#   Bytes MAC: 00 0c 29 76 43 e1 -> 00:0c:29:76:43:e1
+#   Bytes TCP_FLAG: 10 -> ACK
+# Observações:
+#   - Os valores hexadecimais devem ser fornecidos no formato 0xNN
+#   - Foco didático, não produção
+#
+# Autor: Paulo Marques
+# Repositório: https://github.com/pmarques34/scripts_labs
+# Licença: MIT
+#
+
+#=============================================================================================================
+#   Lidando com o ajuste das linhas do script ao tamanho da janela
+#=============================================================================================================
+
+#Descobrindo o tamanho atual da janela
+#
+cols=$(tput cols) #verifica largura da janela e armazena em cols
+lines=$(tput lines) #verifica a quantidade de linhas na janela e armazena em lines
+#
+#Quebra automática de texto conforme a largura usando o fold. Sempre usar ao final de linhas longas
+#
+#   Para a quebra automática usar o fold >>> printf ... | fold -s -w "$(tput cols)"
+#       -s >>> quebra em espaços (não corta palavras)
+#       -W >>> largura máxima 
+#
+#Usar Separadores Dinâmicos
+#
+#   printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+#   printf '%*s\n' "$(tput cols)" '' | tr ' ' '-'
+
+
+
+#=============================================================================================================
+#   Apresentação do Script
+#=============================================================================================================
+
+clear
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "%s\n" "
+    Olá,
+
+    Este script foi criado durante a prática de análise de protocolos do curso Novo Pentest Profissional da DESEC.
+
+    Seu objetivo além de praticar a criação de scripts, é traduzir e formatar sequências de bytes em formato hexadecimal para valores legíveis:
+
+- Endereços MAC (6 bytes)
+- Endereços IPv4 (4 bytes)
+- Portas TCP/UDP
+- Sockets no formato IP:PORTA
+- Flags TCP (Control Bits)
+
+*** O script foi desenvolvido com foco educacional, auxiliando no entendimento de headers de protocolos 
+de rede, endianness, offsets e interpretação manual de campos extraídos de capturas de tráfego (PCAP).
+" | fold -s -w "$(tput cols)"
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+#=============================================================================================================
+#   Variáveis
+#=============================================================================================================
+
+hex_src_mac_address=()
+hex_dst_mac_address=()
+hex_src_ip_address=()
+hex_dst_ip_address=()
+hex_src_port_address=()
+hex_dst_port_address=()
+hex_tcp_flags=()
+
+opcao_desejada="UNDEFINED"
+
+dec_src_mac_address=()
+dec_dst_mac_address=()
+dec_src_ip_address=()
+dec_dst_ip_address=()
+dec_src_port_address=()
+dec_dst_port_address=()
+dec_tcp_flags=()
+
+src_port="UNDEFINED"
+dst_port="UNDEFINED"
+
+bit_tcp_flag="UNDEFINED"
+tcp_flag="UNDEFINED"
+
+dst_mac_address="UNDEFINED"
+src_mac_address="UNDEFINED"
+src_ip_address="UNDEFINED"
+
+GREEN=$(tput setaf 2)
+RESET=$(tput sgr0)
+
+dst_mac_visual=$(cat <<EOF
+   [ DST MAC ]
+${GREEN}1a 2b 3c 4d 5e 6f${RESET} -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+EOF
+)
+
+src_mac_visual=$(cat <<EOF
+                     [ SRC MAC ]
+-- -- -- -- -- -- ${GREEN}1a 2b 3c 4d 5e 6f${RESET} -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+EOF
+)
+
+src_ip_visual=$(cat <<EOF
+                     
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+                               [ SRC IP ]
+-- -- -- -- -- -- -- -- -- -- ${GREEN}1a 2b 3c 4d${RESET} -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+EOF
+)
+
+
+dst_ip_visual=$(cat <<EOF
+                     
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+                                          [ DST 
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- ${GREEN}1a 2b${RESET}
+IP ]
+${GREEN}3c 4d${RESET} -- -- -- -- -- -- -- -- -- -- -- -- -- --
+EOF
+)
+
+src_port_visual=$(cat <<EOF
+                     
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+  [ SRC PORT ]
+-- -- ${GREEN}1a 2b${RESET} -- -- -- -- -- -- -- -- -- -- -- --
+EOF
+)
+
+dst_port_visual=$(cat <<EOF
+                     
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+        [ DST PORT ]
+-- -- -- -- ${GREEN}1a 2b${RESET} -- -- -- -- -- -- -- -- -- --
+EOF
+)
+
+tcp_flag_visual=$(cat <<EOF
+                     
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- 
+                                      [ TCP FLAG ]
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -${GREEN}a 2b${RESET}
+EOF
+)
+
+#=============================================================================================================
+#   Solicitação e Armazenamento dos valores em Hexadecimal
+#=============================================================================================================
+
+printf "\n  Vamos começar, analise o bloco de código, separe as sequências hexadecimais e siga as orientações abaixo:"
+printf "\n"
+
+printf "\n$dst_mac_visual\n"
+printf "\n01 - Informe os 6 bytes do DST-MAC-ADDRESS separados por espaço, como no exemplo 1A 2B 3C 4D 5E 6F: "
+read -a hex_dst_mac_address
+printf "\nHEX_DST_MAC_ADDRESS == ${hex_dst_mac_address[*]}\n"
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\n$src_mac_visual\n"
+printf "\n02 - Informe os 6 bytes do SRC-MAC-ADDRESS separados por espaço, como no exemplo 1A 2B 3C 4D 5E 6F: "
+read -a hex_src_mac_address
+printf "\nHEX_DST_MAC_ADDRESS == ${hex_dst_mac_address[*]}\nHEX_SRC_MAC_ADDRESS == ${hex_src_mac_address[*]}\n"
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\n$src_ip_visual\n"
+printf "\n03 - Informe os 4 bytes do SRC-IP-ADDRESS separados por espaço, como no exemplo 1A 2B 3C 4D: "
+read -a hex_src_ip_address
+printf "\nHEX_DST_MAC_ADDRESS == ${hex_dst_mac_address[*]}\nHEX_SRC_MAC_ADDRESS == ${hex_src_mac_address[*]}\nHEX_SRC_IP_ADDRESS == ${hex_src_ip_address[*]}\n"
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\n$dst_ip_visual\n"
+printf "\n04 - Informe os 4 bytes do DST-IP-ADDRESS separados por espaço, como no exemplo 1A 2B 3C 4D: "
+read -a hex_dst_ip_address
+printf "\nHEX_DST_MAC_ADDRESS == ${hex_dst_mac_address[*]}\nHEX_SRC_MAC_ADDRESS == ${hex_src_mac_address[*]}\nHEX_SRC_IP_ADDRESS == ${hex_src_ip_address[*]}\nHEX_DST_IP_ADDRESS == ${hex_dst_ip_address[*]}\n"
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\n$src_port_visual\n"
+printf "\n05 - Informe os 2 bytes do SRC-PORT-ADDRESS separados por espaço, como no exemplo 1A 2B: "
+read -a hex_src_port_address
+printf "\nHEX_DST_MAC_ADDRESS == ${hex_dst_mac_address[*]}\nHEX_SRC_MAC_ADDRESS == ${hex_src_mac_address[*]}\nHEX_SRC_IP_ADDRESS == ${hex_src_ip_address[*]}\nHEX_DST_IP_ADDRESS == ${hex_dst_ip_address[*]}\nHEX_SRC_PORT_ADDRESS == ${hex_src_port_address[*]}\n"
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\n$dst_port_visual\n"
+printf "\n06 - Informe os 2 bytes do DST-PORT-ADDRESS separados por espaço, como no exemplo 1A 2B: "
+read -a hex_dst_port_address
+printf "\nHEX_DST_MAC_ADDRESS == ${hex_dst_mac_address[*]}\nHEX_SRC_MAC_ADDRESS == ${hex_src_mac_address[*]}\nHEX_SRC_IP_ADDRESS == ${hex_src_ip_address[*]}\nHEX_DST_IP_ADDRESS == ${hex_dst_ip_address[*]}\nHEX_SRC_PORT_ADDRESS == ${hex_src_port_address[*]}\nHEX_DST_PORT_ADDRESS == ${hex_dst_port_address[*]}\n"
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\n$tcp_flag_visual\n"
+printf "\n07 - Informe os 2 bytes da TCP_FLAG separados por espaço. Atenção usar apenas os 3bits. Exemplo: XA 2B, o X deve ser ignorado: "
+read -a hex_tcp_flags
+printf "\nHEX_DST_MAC_ADDRESS == ${hex_dst_mac_address[*]}\nHEX_SRC_MAC_ADDRESS == ${hex_src_mac_address[*]}\nHEX_SRC_IP_ADDRESS == ${hex_src_ip_address[*]}\nHEX_DST_IP_ADDRESS == ${hex_dst_ip_address[*]}\nHEX_SRC_PORT_ADDRESS == ${hex_src_port_address[*]}\nHEX_DST_PORT_ADDRESS == ${hex_dst_port_address[*]}\nHEX_TCP_FLAGS == ${hex_tcp_flags[*]}\n"
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+#=============================================================================================================
+#   Confirmação dos dados
+#=============================================================================================================
+
+clear
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\n"
+
+printf "%s\n" "Você digitou os seguintes valores:
+
+1 - DST-MAC-ADDRESS: ${hex_dst_mac_address[*]}
+2 - SRC-MAC-ADDRESS: ${hex_src_mac_address[*]}
+3 - SRC-IP-ADDRESS: ${hex_src_ip_address[*]}
+4 - DST-IP-ADDRESS: ${hex_dst_ip_address[*]}
+5 - SRC-PORT-ADDRESS: ${hex_src_port_address[*]}
+6 - DST-PORT-ADDRESS: ${hex_dst_port_address[*]}
+7 - TCP_FLAG: ${hex_tcp_flags[*]}"
+
+printf "\n"
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\n"
+
+printf "%s\n" "Verifique se estão corretos. Digite o valor corresponte ao campo a corrigir (1-7) ou qualquer
+outra tecla para prosseguir"
+
+printf "\n"
+
+read -p "Digite a opção desejada (1-7): " opcao_desejada
+
+while [[ "$opcao_desejada" =~ ^[1-7]$ ]]; do
+
+    case "$opcao_desejada" in
+        1) 
+            printf "\n" 
+            printf "Vamos refazer a opção $opcao_desejada. Digite novamente o DST-MAC-ADDRESS (6 bytes): "
+            read -a hex_dst_mac_address
+            printf "\n" 
+            printf "%s\n" "Você digitou os seguintes valores:
+            1 - DST-MAC-ADDRESS: ${hex_dst_mac_address[*]}
+            2 - SRC-MAC-ADDRESS: ${hex_src_mac_address[*]}
+            3 - SRC-IP-ADDRESS: ${hex_src_ip_address[*]}
+            4 - DST-IP-ADDRESS: ${hex_dst_ip_address[*]}
+            5 - SRC-PORT-ADDRESS: ${hex_src_port_address[*]}
+            6 - DST-PORT-ADDRESS: ${hex_dst_port_address[*]}
+            7 - TCP_FLAG: ${hex_tcp_flags[*]}"
+            ;;
+        2) 
+            printf "\n"
+            printf "Vamos refazer a opção $opcao_desejada. Digite novamente o SRC-MAC-ADDRESS (6 bytes): "
+            read -a hex_src_mac_address
+            printf "\n" 
+            printf "%s\n" "Você digitou os seguintes valores:
+            1 - DST-MAC-ADDRESS: ${hex_dst_mac_address[*]}
+            2 - SRC-MAC-ADDRESS: ${hex_src_mac_address[*]}
+            3 - SRC-IP-ADDRESS: ${hex_src_ip_address[*]}
+            4 - DST-IP-ADDRESS: ${hex_dst_ip_address[*]}
+            5 - SRC-PORT-ADDRESS: ${hex_src_port_address[*]}
+            6 - DST-PORT-ADDRESS: ${hex_dst_port_address[*]}
+            7 - TCP_FLAG: ${hex_tcp_flags[*]}"
+            ;;
+        3) 
+            printf "\n"
+            printf "Vamos refazer a opção $opcao_desejada. Digite novamente o SRC-IP-ADDRESS (4 bytes): "
+            read -a hex_src_ip_address
+            printf "\n" 
+            printf "%s\n" "Você digitou os seguintes valores:
+            1 - DST-MAC-ADDRESS: ${hex_dst_mac_address[*]}
+            2 - SRC-MAC-ADDRESS: ${hex_src_mac_address[*]}
+            3 - SRC-IP-ADDRESS: ${hex_src_ip_address[*]}
+            4 - DST-IP-ADDRESS: ${hex_dst_ip_address[*]}
+            5 - SRC-PORT-ADDRESS: ${hex_src_port_address[*]}
+            6 - DST-PORT-ADDRESS: ${hex_dst_port_address[*]}
+            7 - TCP_FLAG: ${hex_tcp_flags[*]}"
+            ;;
+        4) 
+            printf "\n"
+            printf "Vamos refazer a opção $opcao_desejada. Digite novamente o DST-IP-ADDRESS (4 bytes): "
+            read -a hex_dst_ip_address
+            printf "\n" 
+            printf "%s\n" "Você digitou os seguintes valores:
+            1 - DST-MAC-ADDRESS: ${hex_dst_mac_address[*]}
+            2 - SRC-MAC-ADDRESS: ${hex_src_mac_address[*]}
+            3 - SRC-IP-ADDRESS: ${hex_src_ip_address[*]}
+            4 - DST-IP-ADDRESS: ${hex_dst_ip_address[*]}
+            5 - SRC-PORT-ADDRESS: ${hex_src_port_address[*]}
+            6 - DST-PORT-ADDRESS: ${hex_dst_port_address[*]}
+            7 - TCP_FLAG: ${hex_tcp_flags[*]}"
+            ;;
+        5) 
+            printf "\n"
+            printf "Vamos refazer a opção $opcao_desejada. Digite novamente o SRC-PORT-ADDRESS (2 bytes): "
+            read -a hex_src_port_address
+            printf "\n" 
+            printf "%s\n" "Você digitou os seguintes valores:
+            1 - DST-MAC-ADDRESS: ${hex_dst_mac_address[*]}
+            2 - SRC-MAC-ADDRESS: ${hex_src_mac_address[*]}
+            3 - SRC-IP-ADDRESS: ${hex_src_ip_address[*]}
+            4 - DST-IP-ADDRESS: ${hex_dst_ip_address[*]}
+            5 - SRC-PORT-ADDRESS: ${hex_src_port_address[*]}
+            6 - DST-PORT-ADDRESS: ${hex_dst_port_address[*]}
+            7 - TCP_FLAG: ${hex_tcp_flags[*]}"
+            ;;
+        6) 
+            printf "\n"
+            printf "Vamos refazer a opção $opcao_desejada. Digite novamente o DST-PORT-ADDRESS (2 bytes): "
+            read -a hex_dst_port_address
+            printf "\n" 
+            printf "%s\n" "Você digitou os seguintes valores:
+            1 - DST-MAC-ADDRESS: ${hex_dst_mac_address[*]}
+            2 - SRC-MAC-ADDRESS: ${hex_src_mac_address[*]}
+            3 - SRC-IP-ADDRESS: ${hex_src_ip_address[*]}
+            4 - DST-IP-ADDRESS: ${hex_dst_ip_address[*]}
+            5 - SRC-PORT-ADDRESS: ${hex_src_port_address[*]}
+            6 - DST-PORT-ADDRESS: ${hex_dst_port_address[*]}
+            7 - TCP_FLAG: ${hex_tcp_flags[*]}"
+            ;;
+        7) 
+            printf "\n"
+            printf "Vamos refazer a opção $opcao_desejada. Digite novamente o TCP_FLAG (2 bytes): "
+            read -a hex_tcp_flags
+            printf "\n" 
+            printf "%s\n" "Você digitou os seguintes valores:
+            1 - DST-MAC-ADDRESS: ${hex_dst_mac_address[*]}
+            2 - SRC-MAC-ADDRESS: ${hex_src_mac_address[*]}
+            3 - SRC-IP-ADDRESS: ${hex_src_ip_address[*]}
+            4 - DST-IP-ADDRESS: ${hex_dst_ip_address[*]}
+            5 - SRC-PORT-ADDRESS: ${hex_src_port_address[*]}
+            6 - DST-PORT-ADDRESS: ${hex_dst_port_address[*]}
+            7 - TCP_FLAG: ${hex_tcp_flags[*]}"
+            ;;
+    *) 
+            printf "Estando tudo correto vamos prosseguir\n"
+            ;;
+    esac
+
+printf "\n" 
+read -p "Digite a opção desejada (1-7): " opcao_desejada
+
+done
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '-'
+
+
+#=============================================================================================================
+#   Cálculos - Prefixar o 0x para fazer a conversão de hexadecimal para decimal
+#     
+#       O que acontece abaixo:
+#       
+#            for byte in "${hex_src_ip_address[@]}"
+#            percorre cada byte (c0, a8, 00, 0a)
+#
+#            0x$byte
+#            monta algo como 0xc0
+#
+#            printf "%d" 0xc0
+#            converte para decimal (192)
+#
+#            dec_src_ip_address+=( ... )
+#            adiciona ao array decimal
+#=============================================================================================================
+
+for byte in "${hex_src_ip_address[@]}"; do
+    dec_src_ip_address+=( "$(printf "%d" 0x$byte)" )
+done
+for byte in "${hex_dst_ip_address[@]}"; do
+    dec_dst_ip_address+=( "$(printf "%d" 0x$byte)" )
+done
+for byte in "${hex_src_port_address[@]}"; do
+    dec_src_port_address+=( "$(printf "%d" 0x$byte)" )
+done
+for byte in "${hex_dst_port_address[@]}"; do
+    dec_dst_port_address+=( "$(printf "%d" 0x$byte)" )
+done
+for byte in "${hex_tcp_flags[@]}"; do
+    dec_tcp_flags+=( "$(printf "%d" 0x$byte)" )
+done
+
+#=============================================================================================================
+#   Cálculos - Aplicando a fórmula para as portas e o trecho para comparação dos bits
+#     
+#       (bit mais signicativo x 256) + bit menos significativo
+#
+#       (bits do tcp flag e suas combinações mais comuns)
+#
+#           2    → SYN
+#           16   → ACK
+#           18   → SYN + ACK
+#           17   → FIN + ACK
+#           4    → RST
+#           20   → RST + ACK
+#           24   → PSH + ACK
+#           25   → PSH + FIN + ACK
+#           29   → FIN + PSH + ACK
+#       
+#=============================================================================================================
+
+src_port=$(( dec_src_port_address[0] * 256 + dec_src_port_address[1] ))
+dst_port=$(( dec_dst_port_address[0] * 256 + dec_dst_port_address[1] ))
+
+#Didaticamente: Estou lendo 2 bytes de control bits, no TCP real, flags estão em 1 byte 
+#(6 bits úteis + ECN), como o script é educacional e consciente, fiz dessa forma pra focar nas flags mais
+#importantes e facilitar o resultado final
+
+bit_tcp_flag=$(( dec_tcp_flags[0] * 256 + dec_tcp_flags[1] ))
+
+if [[ "$bit_tcp_flag" -eq 2 ]]; then
+    tcp_flag="bit2_SYN"
+elif [[ "$bit_tcp_flag" -eq 16 ]]; then
+    tcp_flag="bit16_ACK"
+elif [[ "$bit_tcp_flag" -eq 18 ]]; then
+    tcp_flag="bit18_SYN_ACK"
+elif [[ "$bit_tcp_flag" -eq 17 ]]; then
+    tcp_flag="bit17_FIN_ACK"
+elif [[ "$bit_tcp_flag" -eq 4 ]]; then
+    tcp_flag="bit4_RST"
+elif [[ "$bit_tcp_flag" -eq 20 ]]; then
+    tcp_flag="bit20_RST_ACK"
+elif [[ "$bit_tcp_flag" -eq 24 ]]; then
+    tcp_flag="bit24_PSH_ACK"
+elif [[ "$bit_tcp_flag" -eq 25 ]]; then
+    tcp_flag="bit25_PSH_FIN_ACK"
+elif [[ "$bit_tcp_flag" -eq 29 ]]; then
+    tcp_flag="bit29_FIN_PSH_ACK"
+else
+    printf "%s\n" "O valor encontrado, $bit_tcp_flag, não é um valor comum. 
+            Segue os os valores de cada bit
+            1-FIN, 2-SYN, 4-RST, 8-PSH, 16-ACK, 32-URG, 64-ECE, 128-CWR\n"
+fi
+
+#=============================================================================================================
+#   Normalização dos resultados
+#=============================================================================================================
+
+dst_mac_address="${hex_dst_mac_address[0]}:${hex_dst_mac_address[1]}:${hex_dst_mac_address[2]}:${hex_dst_mac_address[3]}:${hex_dst_mac_address[4]}:${hex_dst_mac_address[5]}"
+src_mac_address="${hex_src_mac_address[0]}:${hex_src_mac_address[1]}:${hex_src_mac_address[2]}:${hex_src_mac_address[3]}:${hex_src_mac_address[4]}:${hex_src_mac_address[5]}"
+src_ip_address="${dec_src_ip_address[0]}.${dec_src_ip_address[1]}.${dec_src_ip_address[2]}.${dec_src_ip_address[3]}"
+dst_ip_address="${dec_dst_ip_address[0]}.${dec_dst_ip_address[1]}.${dec_dst_ip_address[2]}.${dec_dst_ip_address[3]}"
+src_port_address=$src_port
+dst_port_address=$dst_port
+socket_src="$src_ip_address:$src_port_address"
+socket_dst="$dst_ip_address:$dst_port_address"
+
+
+#=============================================================================================================
+#   Apresentação dos resultados
+#=============================================================================================================
+
+
+clear
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "Os resultados estão abaixo, Bytes em Hexadecimal seguido (>>>) da saída formatada:"
+
+printf "\n"
+
+printf "%s\n""DST_MAC_ADDRESS == $dst_mac_address
+SRC_MAC_ADDRESS == $src_mac_address
+SRC_IP_ADDRESS == ${hex_src_ip_address[*]} >>> $src_ip_address
+DST_IP_ADDRESS == ${hex_dst_ip_address[*]} >>> $dst_ip_address
+SRC_PORT_ADDRESS == ${hex_src_port_address[*]} >>> $src_port
+DST_PORT_ADDRESS == ${hex_dst_port_address[*]} >>> $dst_port
+SOCKET_SRC == $socket_src
+SOCKET_DST == $socket_dst
+TCP_FLAGS == ${hex_tcp_flags[*]} >>> $tcp_flag
+BIT_TCP == $bit_tcp_flag >>> 1-FIN, 2-SYN, 4-RST, 8-PSH, 16-ACK, 32-URG, 64-ECE, 128-CWR"
+
+printf "\n"
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\nConversorBytesTcpIpHeader_HexToDec - Paulo Marques - v1 - 08JAN26\n\n"
+
+printf "%s\n" "Para uma v.2 futura, ele vai ser adaptado pra copiar as 3 primeiras linhas de uma só vez e entregar o mesmo resultado.
+Diminuindo a interação com o terminal, acelerando e reduzindo erros de entrada. Fazer dessa forma mais longa foi uma boa forma de praticar Bash"
+
+printf '%*s\n' "$(tput cols)" '' | tr ' ' '='
+
+printf "\n"
